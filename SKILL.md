@@ -1,5 +1,5 @@
 ---
-name: session-search
+name: converseek
 description: "Search and read sessions across 7 AI coding tools: Claude Code, Cursor, Antigravity 2.0, OpenCode, ZCode, Paseo, and Hermes."
 version: 1.0.0
 author: Hermes Agent

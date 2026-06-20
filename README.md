@@ -1,4 +1,4 @@
-# session-search
+# converseek
 
 Cross-tool session search and retrieval for 7 AI coding tools.
 
@@ -19,16 +19,16 @@ Cross-tool session search and retrieval for 7 AI coding tools.
 ```bash
 uv tool install .
 # or
-uv run session-search tools
+uv run converseek tools
 ```
 
 ## Usage
 
 ```bash
-session-search tools                                    # list adapters
-session-search list --limit 10                         # recent sessions
-session-search list --tool hermes --limit 5            # filter by tool
-session-search search "docker networking"              # full-text search
-session-search search "auth" --tool claude-code,hermes # search specific tools
-session-search show hermes:20260620_201309_a8e8cb95    # read a session
+converseek tools                                    # list adapters
+converseek list --limit 10                         # recent sessions
+converseek list --tool hermes --limit 5            # filter by tool
+converseek search "docker networking"              # full-text search
+converseek search "auth" --tool claude-code,hermes # search specific tools
+converseek show hermes:20260620_201309_a8e8cb95    # read a session
 ```
