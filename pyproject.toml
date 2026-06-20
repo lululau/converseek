@@ -1,16 +1,16 @@
 [project]
-name = "session-search"
-version = "0.1.0"
-description = "Cross-tool session search and retrieval for AI coding tools (Claude Code, Cursor, Antigravity, OpenCode, ZCode, Paseo, Hermes)"
+name = "converseek"
+version = "0.2.0"
+description = "Cross-tool session search, browse, and export for AI coding tools (Claude Code, Cursor, Antigravity, OpenCode, ZCode, Paseo, Hermes)"
 requires-python = ">=3.11"
 dependencies = []
 
 [project.scripts]
-session-search = "session_search.__main__:main"
+converseek = "converseek.__main__:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/session_search"]
+packages = ["src/converseek"]

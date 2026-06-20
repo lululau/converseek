@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
-"""session_search — cross-tool session search and retrieval.
+"""converseek — cross-tool conversation search, browse, and export.
 
 Search and read sessions from 7 AI coding tools:
   claude-code, hermes, opencode, paseo, zcode, cursor, antigravity
 
 Usage:
-    session_search list [--tool TOOL] [--limit N] [--since DATE] [--cwd PATH]
-    session_search search QUERY [--tool TOOL] [--limit N]
-    session_search show TOOL:SESSION_ID [--window N]
-    session_search tools
+    converseek list [--tool TOOL] [--limit N] [--since DATE] [--project PATH]
+    converseek search QUERY [--tool TOOL] [--limit N] [--project PATH]
+    converseek show TOOL:SESSION_ID [--window N]
+    converseek export TOOL:SESSION_ID [-o FILE]
+    converseek projects
+    converseek tools
 
 Examples:
-    session_search list --limit 10
-    session_search search "docker networking"
-    session_search search "auth refactor" --tool claude-code,hermes
-    session_search show hermes:20260620_201309_a8e8cb95
-    session_search tools
+    converseek list --limit 10
+    converseek search "docker networking"
+    converseek search "auth refactor" --tool claude-code,hermes
+    converseek show hermes:20260620_201309_a8e8cb95
+    converseek export hermes:20260620_201309_a8e8cb95
+    converseek tools
 """
 from __future__ import annotations
 
@@ -409,8 +412,8 @@ def cmd_tools(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        prog="session-search",
-        description="Cross-tool session search and retrieval",
+        prog="converseek",
+        description="Cross-tool conversation search, browse, and export",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
