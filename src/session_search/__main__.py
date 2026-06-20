@@ -234,6 +234,7 @@ def cmd_search(args):
 
 
 def cmd_show(args):
+    """Display messages from a session in the terminal."""
     parts = args.ref.split(":", 1)
     if len(parts) != 2:
         print(f"Error: invalid reference '{args.ref}'. Use TOOL:SESSION_ID", file=sys.stderr)
@@ -287,6 +288,107 @@ def cmd_show(args):
     return 0
 
 
+def cmd_export(args):
+    """Export a session to a Markdown file."""
+    parts = args.ref.split(":", 1)
+    if len(parts) != 2:
+        print(f"Error: invalid reference '{args.ref}'. Use TOOL:SESSION_ID", file=sys.stderr)
+        return 1
+    tool_name, session_id = parts
+
+    cls = ADAPTERS.get(tool_name)
+    if not cls:
+        print(f"Error: unknown tool '{tool_name}'", file=sys.stderr)
+        return 1
+
+    adapter = cls()
+    if not adapter.is_available():
+        print(f"Error: '{tool_name}' data not found", file=sys.stderr)
+        return 1
+
+    meta = adapter.get_session(session_id)
+    if not meta:
+        print(f"Session not found: {args.ref}", file=sys.stderr)
+        return 1
+
+    messages = adapter.read_messages(session_id)
+    if not messages:
+        print("No messages found to export.", file=sys.stderr)
+        return 1
+
+    # Build Markdown content
+    lines: list[str] = []
+    # Front matter
+    lines.append(f"# {meta.title or meta.ref}")
+    lines.append("")
+    lines.append("| Field | Value |")
+    lines.append("|-------|-------|")
+    lines.append(f"| **Tool** | {meta.tool} |")
+    lines.append(f"| **Session ID** | `{meta.session_id}` |")
+    lines.append(f"| **Project** | `{meta.cwd or '?'}` |")
+    lines.append(f"| **Created** | {_fmt_time(meta.created_at)} |")
+    lines.append(f"| **Updated** | {_fmt_time(meta.updated_at)} |")
+    if meta.model:
+        lines.append(f"| **Model** | {meta.model} |")
+    lines.append(f"| **Messages** | {len(messages)} |")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+
+    for msg in messages:
+        role_label = {
+            "user": "User",
+            "assistant": "Assistant",
+            "system": "System",
+            "tool": "Tool",
+        }.get(msg.role, msg.role.capitalize())
+
+        ts = _fmt_time(msg.timestamp) if msg.timestamp else ""
+        # Message header as H3
+        header_parts = [f"### {role_label}"]
+        if ts:
+            header_parts.append(ts)
+        if msg.model:
+            header_parts.append(f"_{msg.model}_")
+        lines.append(" ".join(header_parts))
+        lines.append("")
+
+        # Content
+        content = msg.content.strip()
+        if not content and msg.tool_name:
+            content = f"_(tool call: {msg.tool_name})_"
+        if content:
+            lines.append(content)
+        lines.append("")
+
+        # Tool call annotation
+        if msg.tool_name:
+            lines.append(f"> 🔧 **Tool**: `{msg.tool_name}`")
+            lines.append("")
+
+        if msg.reasoning:
+            lines.append("<details><summary>💭 Reasoning</summary>")
+            lines.append("")
+            lines.append(msg.reasoning.strip())
+            lines.append("")
+            lines.append("</details>")
+            lines.append("")
+
+    md_content = "\n".join(lines)
+
+    # Determine output path
+    if args.output:
+        out_path = Path(args.output)
+    else:
+        # Default: ./<tool>-<session_id>.md
+        safe_id = meta.session_id.replace("/", "_")[:40]
+        out_path = Path(f"{meta.tool}-{safe_id}.md")
+
+    out_path.write_text(md_content, encoding="utf-8")
+    print(f"Exported {len(messages)} messages to {out_path}")
+    return 0
+
+
 def cmd_tools(args):
     print("Available adapters:\n")
     print(f"{'TOOL':<16} {'STATUS':<10} {'LOCATION'}")
@@ -335,6 +437,12 @@ def main():
     p_show.add_argument("--window", "-w", type=int, help="Only show last N messages")
     p_show.add_argument("--max-chars", type=int, default=2000, help="Max chars per message")
     p_show.set_defaults(func=cmd_show)
+
+    # export
+    p_export = sub.add_parser("export", help="Export a session to a Markdown file")
+    p_export.add_argument("ref", help="Session reference: TOOL:SESSION_ID")
+    p_export.add_argument("-o", "--output", help="Output file path (default: ./<tool>-<session_id>.md)")
+    p_export.set_defaults(func=cmd_export)
 
     # projects
     p_projects = sub.add_parser("projects", help="List all projects with session counts")
