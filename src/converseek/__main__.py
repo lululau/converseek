@@ -162,10 +162,15 @@ def cmd_list(args):
     adapters = get_adapters(args.tool)
     all_sessions = []
 
+    # --project is a CLI-side post-filter, so the per-adapter limit must NOT
+    # truncate before filtering (otherwise we'd only ever filter the globally
+    # most-recent `limit` sessions). Fetch a large pool when filtering.
+    fetch_limit = 100000 if args.project else args.limit
+
     for name, adapter in adapters:
         sessions, _ = _with_timeout(
             adapter.list_sessions, name,
-            limit=args.limit, since=since, cwd=args.cwd
+            limit=fetch_limit, since=since, cwd=args.cwd
         )
         all_sessions.extend(sessions)
 
@@ -199,9 +204,12 @@ def cmd_search(args):
     adapters = get_adapters(args.tool)
     all_results: list[tuple] = []
 
+    # See cmd_list: --project filters after the fact, so fetch a larger pool.
+    fetch_limit = 100000 if args.project else args.limit
+
     for name, adapter in adapters:
         results, _ = _with_timeout(
-            adapter.search_sessions, name, args.query, limit=args.limit
+            adapter.search_sessions, name, args.query, limit=fetch_limit
         )
         all_results.extend(results)
 

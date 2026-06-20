@@ -1,14 +1,18 @@
 """Claude Code adapter.
 
-Reads from:
-  - ~/.claude/projects/<encoded-path>/sessions-index.json  (session metadata)
+Source of truth is the per-session JSONL transcript:
   - ~/.claude/projects/<encoded-path>/<session-id>.jsonl   (full messages)
+
+The legacy ~/.claude/projects/<encoded-path>/sessions-index.json file is only
+used as *optional* enrichment when present. Newer Claude Code versions no
+longer keep that index up to date (and most projects never have one), so
+relying on it alone hides nearly every session. We therefore scan the JSONL
+files directly and fall back to the index purely for nicer titles/summaries.
 """
 from __future__ import annotations
 
 import json
-import os
-import glob
+from collections.abc import Iterator
 from pathlib import Path
 
 from ..base import BaseAdapter, SessionMeta, Message
@@ -21,12 +25,28 @@ def _ts(iso_str: str) -> float:
     """Parse ISO timestamp to Unix epoch seconds."""
     if not iso_str:
         return 0.0
-    from datetime import datetime, timezone
+    from datetime import datetime
     try:
         dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
         return dt.timestamp()
     except Exception:
         return 0.0
+
+
+def _content_to_text(content) -> str:
+    """Flatten a Claude message ``content`` field into plain text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for part in content:
+            if isinstance(part, dict):
+                if part.get("type") == "text":
+                    parts.append(part.get("text", ""))
+            elif isinstance(part, str):
+                parts.append(part)
+        return "\n".join(p for p in parts if p)
+    return ""
 
 
 class ClaudeCodeAdapter(BaseAdapter):
@@ -38,6 +58,9 @@ class ClaudeCodeAdapter(BaseAdapter):
     def is_available(self) -> bool:
         return self.base_dir.is_dir()
 
+    # ------------------------------------------------------------------
+    # Optional legacy index (enrichment only)
+    # ------------------------------------------------------------------
     def _iter_index_files(self) -> Iterator[Path]:
         """Yield all sessions-index.json files."""
         yield from self.base_dir.glob("*/sessions-index.json")
@@ -50,18 +73,93 @@ class ClaudeCodeAdapter(BaseAdapter):
         except Exception:
             return []
 
-    def _entry_to_meta(self, entry: dict) -> SessionMeta:
-        project_path = entry.get("projectPath", "")
+    def _index_map(self) -> dict[str, dict]:
+        """Map sessionId -> index entry across all index files."""
+        mapping: dict[str, dict] = {}
+        for index_path in self._iter_index_files():
+            for entry in self._load_index(index_path):
+                sid = entry.get("sessionId")
+                if sid:
+                    mapping.setdefault(sid, entry)
+        return mapping
+
+    # ------------------------------------------------------------------
+    # JSONL scanning (source of truth)
+    # ------------------------------------------------------------------
+    def _iter_jsonl_files(self) -> Iterator[Path]:
+        yield from self.base_dir.glob("*/*.jsonl")
+
+    def _extract_meta(
+        self, jsonl_path: Path, index_entry: dict | None = None
+    ) -> SessionMeta:
+        """Build a SessionMeta by scanning a session JSONL transcript."""
+        session_id = jsonl_path.stem
+        cwd: str | None = None
+        git_branch: str | None = None
+        first_prompt = ""
+        first_ts = 0.0
+        last_ts = 0.0
+        message_count = 0
+        model: str | None = None
+
+        try:
+            with open(jsonl_path, encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if cwd is None and obj.get("cwd"):
+                        cwd = obj.get("cwd")
+                    if git_branch is None and obj.get("gitBranch"):
+                        git_branch = obj.get("gitBranch")
+                    if obj.get("type") not in ("user", "assistant"):
+                        continue
+                    message_count += 1
+                    ts = _ts(obj.get("timestamp", ""))
+                    if ts:
+                        if not first_ts:
+                            first_ts = ts
+                        last_ts = ts
+                    msg = obj.get("message", {}) or {}
+                    if model is None and msg.get("model"):
+                        model = msg.get("model")
+                    if not first_prompt and obj.get("type") == "user":
+                        text = _content_to_text(msg.get("content", "")).strip()
+                        if text:
+                            first_prompt = text
+        except OSError:
+            pass
+
+        try:
+            mtime = jsonl_path.stat().st_mtime
+        except OSError:
+            mtime = 0.0
+
+        if index_entry:
+            if not first_prompt:
+                first_prompt = index_entry.get("firstPrompt", "") or index_entry.get(
+                    "summary", ""
+                )
+            if cwd is None:
+                cwd = index_entry.get("projectPath") or None
+            if git_branch is None:
+                git_branch = index_entry.get("gitBranch")
+
         return SessionMeta(
             tool=self.tool_name,
-            session_id=entry["sessionId"],
-            title=entry.get("firstPrompt", "")[:200],
+            session_id=session_id,
+            title=(first_prompt or "")[:200],
             source="cli",
-            cwd=project_path or None,
-            created_at=_ts(entry.get("created", "")),
-            updated_at=_ts(entry.get("modified", "")),
-            message_count=entry.get("messageCount", 0),
-            git_branch=entry.get("gitBranch"),
+            cwd=cwd,
+            created_at=first_ts or mtime,
+            updated_at=last_ts or mtime,
+            message_count=message_count,
+            model=model,
+            git_branch=git_branch,
         )
 
     def list_sessions(
@@ -71,72 +169,56 @@ class ClaudeCodeAdapter(BaseAdapter):
         since: float | None = None,
         cwd: str | None = None,
     ) -> list[SessionMeta]:
+        index_map = self._index_map()
         results: list[SessionMeta] = []
-        for index_path in self._iter_index_files():
-            for entry in self._load_index(index_path):
-                meta = self._entry_to_meta(entry)
-                if since and meta.created_at < since:
-                    continue
-                if cwd and meta.cwd and not meta.cwd.startswith(cwd):
-                    continue
-                results.append(meta)
+        for jsonl_path in self._iter_jsonl_files():
+            meta = self._extract_meta(jsonl_path, index_map.get(jsonl_path.stem))
+            if since and meta.updated_at < since:
+                continue
+            if cwd and (not meta.cwd or not meta.cwd.startswith(cwd)):
+                continue
+            results.append(meta)
         results.sort(key=lambda m: m.updated_at, reverse=True)
         return results[:limit]
 
     def search_sessions(self, query: str, *, limit: int = 20) -> list[tuple[SessionMeta, str]]:
-        """Search by scanning sessions-index.json firstPrompt + JSONL filenames."""
+        """Search by scanning JSONL transcripts (title first, then body)."""
         q_lower = query.lower()
+        index_map = self._index_map()
         results: list[tuple[SessionMeta, str]] = []
+        seen: set[str] = set()
 
-        # Phase 1: search in firstPrompt (fast)
-        for index_path in self._iter_index_files():
-            for entry in self._load_index(index_path):
-                title = entry.get("firstPrompt", "")
-                if q_lower in title.lower():
-                    meta = self._entry_to_meta(entry)
-                    snippet = title[:300]
-                    results.append((meta, snippet))
+        for jsonl_path in self._iter_jsonl_files():
+            sid = jsonl_path.stem
+            if sid in seen:
+                continue
+            meta = self._extract_meta(jsonl_path, index_map.get(sid))
+            # Phase 1: match on title.
+            if q_lower in meta.title.lower():
+                results.append((meta, meta.title[:300]))
+                seen.add(sid)
                 if len(results) >= limit:
                     return results
-
-        # Phase 2: grep JSONL files (slower, but catches body content)
-        if len(results) < limit:
-            for jsonl_path in self.base_dir.glob("*/*.jsonl"):
-                try:
-                    with open(jsonl_path, encoding="utf-8", errors="replace") as f:
-                        for line in f:
-                            if q_lower in line.lower():
-                                session_id = jsonl_path.stem
-                                meta = self.get_session(session_id)
-                                if meta:
-                                    snippet = line[:300]
-                                    tup = (meta, snippet)
-                                    if tup not in results:
-                                        results.append(tup)
-                                break  # one match per file is enough
-                except Exception:
-                    continue
-                if len(results) >= limit:
-                    break
+                continue
+            # Phase 2: scan body for a matching line.
+            try:
+                with open(jsonl_path, encoding="utf-8", errors="replace") as f:
+                    for line in f:
+                        if q_lower in line.lower():
+                            results.append((meta, line.strip()[:300]))
+                            seen.add(sid)
+                            break
+            except OSError:
+                continue
+            if len(results) >= limit:
+                break
 
         return results[:limit]
 
     def get_session(self, session_id: str) -> SessionMeta | None:
-        for index_path in self._iter_index_files():
-            for entry in self._load_index(index_path):
-                if entry.get("sessionId") == session_id:
-                    return self._entry_to_meta(entry)
-        # Fallback: construct from JSONL file
         jsonl_path = next(self.base_dir.glob(f"*/{session_id}.jsonl"), None)
         if jsonl_path:
-            return SessionMeta(
-                tool=self.tool_name,
-                session_id=session_id,
-                title="(no index)",
-                source="cli",
-                created_at=jsonl_path.stat().st_mtime,
-                updated_at=jsonl_path.stat().st_mtime,
-            )
+            return self._extract_meta(jsonl_path, self._index_map().get(session_id))
         return None
 
     def read_messages(
