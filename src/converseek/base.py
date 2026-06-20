@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 class SessionMeta:
     """Unified session metadata across all tools."""
 
-    tool: str  # "claude-code", "cursor", "hermes", etc.
+    tool: str  # "claude", "cursor", "hermes", etc.
     session_id: str  # tool-native session ID
     title: str = ""
     source: str = ""  # platform / channel / CLI
@@ -24,7 +24,7 @@ class SessionMeta:
 
     @property
     def ref(self) -> str:
-        """Cross-tool reference handle, e.g. 'claude-code:abc123'."""
+        """Cross-tool reference handle, e.g. 'claude:abc123'."""
         return f"{self.tool}:{self.session_id}"
 
 

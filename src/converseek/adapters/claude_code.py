@@ -30,7 +30,7 @@ def _ts(iso_str: str) -> float:
 
 
 class ClaudeCodeAdapter(BaseAdapter):
-    tool_name = "claude-code"
+    tool_name = "claude"
 
     def __init__(self, base_dir: Path | None = None):
         self.base_dir = base_dir or CLAUDE_DIR

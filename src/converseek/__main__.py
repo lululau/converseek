@@ -2,7 +2,7 @@
 """converseek — cross-tool conversation search, browse, and export.
 
 Search and read sessions from 7 AI coding tools:
-  claude-code, hermes, opencode, paseo, zcode, cursor, antigravity
+  claude, hermes, opencode, paseo, zcode, cursor, antigravity
 
 Usage:
     converseek list [--tool TOOL] [--limit N] [--since DATE] [--project PATH]
@@ -15,7 +15,7 @@ Usage:
 Examples:
     converseek list --limit 10
     converseek search "docker networking"
-    converseek search "auth refactor" --tool claude-code,hermes
+    converseek search "auth refactor" --tool claude,hermes
     converseek show hermes:20260620_201309_a8e8cb95
     converseek export hermes:20260620_201309_a8e8cb95
     converseek tools
@@ -38,7 +38,7 @@ from .adapters.antigravity import AntigravityAdapter
 
 
 ADAPTERS = {
-    "claude-code": ClaudeCodeAdapter,
+    "claude": ClaudeCodeAdapter,
     "hermes": HermesAdapter,
     "opencode": OpenCodeAdapter,
     "paseo": PaseoAdapter,

@@ -29,6 +29,6 @@ converseek tools                                    # list adapters
 converseek list --limit 10                         # recent sessions
 converseek list --tool hermes --limit 5            # filter by tool
 converseek search "docker networking"              # full-text search
-converseek search "auth" --tool claude-code,hermes # search specific tools
+converseek search "auth" --tool claude,hermes # search specific tools
 converseek show hermes:20260620_201309_a8e8cb95    # read a session
 ```

@@ -5,7 +5,7 @@ version: 1.0.0
 author: Hermes Agent
 metadata:
   hermes:
-    tags: [session, search, cross-tool, reference, claude-code, cursor, hermes, opencode]
+    tags: [session, search, cross-tool, reference, claude, cursor, hermes, opencode]
     related_skills: [electron-app-investigation]
 ---
 
@@ -41,11 +41,11 @@ python3 scripts/session_search.py list --tool hermes --limit 5
 python3 scripts/session_search.py search "docker networking"
 
 # Search specific tools only
-python3 scripts/session_search.py search "auth refactor" --tool claude-code,hermes
+python3 scripts/session_search.py search "auth refactor" --tool claude,hermes
 
 # Read a session's messages
 python3 scripts/session_search.py show hermes:20260620_201309_a8e8cb95
-python3 scripts/session_search.py show claude-code:f2f188c7-... --window 20
+python3 scripts/session_search.py show claude:f2f188c7-... --window 20
 ```
 
 The CLI is at `scripts/session_search.py` relative to this skill directory.
@@ -93,7 +93,7 @@ All sessions use a unified reference format:
 
 Examples:
 - `hermes:20260620_201309_a8e8cb95`
-- `claude-code:f2f188c7-77cf-45c7-bc2f-fe26ed61beb4`
+- `claude:f2f188c7-77cf-45c7-bc2f-fe26ed61beb4`
 - `cursor:b6d91996-70c7-426c-9423-337b96a1c3c1`
 - `antigravity:00d476a2-b9cb-40cc-937d-a7819a750de2`
 - `opencode:ses_1981d72b6ffeN5bTHtWW7EsSZn`
