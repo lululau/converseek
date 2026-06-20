@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections import Counter
 from datetime import datetime
+from pathlib import Path
 
 from .adapters.claude_code import ClaudeCodeAdapter
 from .adapters.hermes import HermesAdapter
@@ -69,6 +71,82 @@ def _fmt_time(ts: float) -> str:
     return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
 
 
+def _with_timeout(fn, adapter_name: str, *args, **kwargs):
+    """Run fn with a 15s SIGALRM timeout. Returns (result, timed_out)."""
+    import signal
+
+    def _timeout_handler(signum, frame):
+        raise TimeoutError()
+
+    try:
+        old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+        signal.alarm(15)
+        try:
+            return fn(*args, **kwargs), False
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)
+    except TimeoutError:
+        print(f"Warning: '{adapter_name}' timed out, skipping", file=sys.stderr)
+        return [], True
+
+
+def _project_name(cwd: str | None) -> str:
+    """Extract a short project name from a cwd path."""
+    if not cwd:
+        return "(unknown)"
+    p = Path(cwd)
+    # Use the last meaningful segment
+    if p.name:
+        return str(p)
+    return cwd
+
+
+def _matches_project(cwd: str | None, project: str) -> bool:
+    """Check if a session's cwd matches the project filter.
+
+    Matches if the project string appears anywhere in the cwd path
+    (case-insensitive), or if cwd ends with the project string.
+    """
+    if not cwd:
+        return False
+    return project.lower() in cwd.lower()
+
+
+def cmd_projects(args):
+    """List all unique project directories with session counts."""
+    adapters = get_adapters(args.tool)
+    project_counter: Counter = Counter()  # {cwd: total_count}
+
+    for name, adapter in adapters:
+        sessions, _ = _with_timeout(
+            adapter.list_sessions, name, limit=9999
+        )
+        for s in sessions:
+            if s.cwd:
+                project_counter[s.cwd] += 1
+
+    if not project_counter:
+        print("No project data found.")
+        return 0
+
+    # Sort by session count descending
+    sorted_projects = project_counter.most_common()
+
+    # Apply --limit
+    if args.limit:
+        sorted_projects = sorted_projects[: args.limit]
+
+    print(f"Found {len(project_counter)} unique projects:\n")
+    print(f"{'SESSIONS':>8}  PROJECT PATH")
+    print("-" * 100)
+    for cwd, count in sorted_projects:
+        print(f"{count:>8}  {cwd}")
+
+    print(f"\nUse --project <path> with list/search to filter by project.")
+    return 0
+
+
 def cmd_list(args):
     since = None
     if args.since:
@@ -80,23 +158,17 @@ def cmd_list(args):
 
     adapters = get_adapters(args.tool)
     all_sessions = []
-    import signal
-
-    def _timeout_handler(signum, frame):
-        raise TimeoutError()
 
     for name, adapter in adapters:
-        try:
-            old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
-            signal.alarm(15)
-            try:
-                sessions = adapter.list_sessions(limit=args.limit, since=since, cwd=args.cwd)
-                all_sessions.extend(sessions)
-            finally:
-                signal.alarm(0)
-                signal.signal(signal.SIGALRM, old_handler)
-        except TimeoutError:
-            print(f"Warning: '{name}' list timed out, skipping", file=sys.stderr)
+        sessions, _ = _with_timeout(
+            adapter.list_sessions, name,
+            limit=args.limit, since=since, cwd=args.cwd
+        )
+        all_sessions.extend(sessions)
+
+    # Filter by project
+    if args.project:
+        all_sessions = [s for s in all_sessions if _matches_project(s.cwd, args.project)]
 
     all_sessions.sort(key=lambda m: m.updated_at, reverse=True)
     all_sessions = all_sessions[: args.limit]
@@ -106,12 +178,15 @@ def cmd_list(args):
         return 0
 
     print(f"Found {len(all_sessions)} sessions:\n")
-    print(f"{'TOOL':<14} {'ID':<42} {'UPDATED':<17} {'MSG':>4}  TITLE")
-    print("-" * 120)
+    if args.project:
+        print(f"  (filtered by project: '{args.project}')\n")
+    print(f"{'TOOL':<14} {'ID':<42} {'UPDATED':<17} {'MSG':>4}  {'PROJECT':<30} TITLE")
+    print("-" * 140)
     for s in all_sessions:
-        title = s.title[:50] + "..." if len(s.title) > 50 else s.title
+        title = s.title[:40] + "..." if len(s.title) > 40 else s.title
         sid = s.session_id[:40]
-        print(f"{s.tool:<14} {sid:<42} {_fmt_time(s.updated_at):<17} {s.message_count:>4}  {title}")
+        proj = _project_name(s.cwd)[:28] if s.cwd else "-"
+        print(f"{s.tool:<14} {sid:<42} {_fmt_time(s.updated_at):<17} {s.message_count:>4}  {proj:<30} {title}")
 
     print(f"\nReference format: @session:<tool>:<session_id>")
     return 0
@@ -120,26 +195,19 @@ def cmd_list(args):
 def cmd_search(args):
     adapters = get_adapters(args.tool)
     all_results: list[tuple] = []
-    import signal
-
-    def _timeout_handler(signum, frame):
-        raise TimeoutError()
 
     for name, adapter in adapters:
-        try:
-            # Per-adapter timeout to prevent slow tools from blocking
-            old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
-            signal.alarm(15)  # 15s per adapter
-            try:
-                results = adapter.search_sessions(args.query, limit=args.limit)
-                all_results.extend(results)
-            finally:
-                signal.alarm(0)
-                signal.signal(signal.SIGALRM, old_handler)
-        except TimeoutError:
-            print(f"Warning: '{name}' search timed out, skipping", file=sys.stderr)
-        except Exception as e:
-            print(f"Error searching {name}: {e}", file=sys.stderr)
+        results, _ = _with_timeout(
+            adapter.search_sessions, name, args.query, limit=args.limit
+        )
+        all_results.extend(results)
+
+    # Filter by project
+    if args.project:
+        all_results = [
+            (meta, snippet) for meta, snippet in all_results
+            if _matches_project(meta.cwd, args.project)
+        ]
 
     all_results.sort(key=lambda r: r[0].updated_at, reverse=True)
     all_results = all_results[: args.limit]
@@ -149,12 +217,17 @@ def cmd_search(args):
         return 0
 
     print(f'Found {len(all_results)} sessions matching "{args.query}":\n')
+    if args.project:
+        print(f"  (filtered by project: '{args.project}')\n")
     for i, (meta, snippet) in enumerate(all_results, 1):
         snippet = snippet.replace("\n", " ").strip()
         if len(snippet) > 120:
             snippet = snippet[:120] + "..."
+        proj = _project_name(meta.cwd)[:40] if meta.cwd else ""
         print(f"  {i}. [{meta.tool}] {meta.title[:60]}")
         print(f"     ref: {meta.ref}")
+        if proj:
+            print(f"     project: {proj}")
         print(f"     {snippet}")
         print()
     return 0
@@ -234,7 +307,7 @@ def cmd_tools(args):
 
 def main():
     parser = argparse.ArgumentParser(
-        prog="session_search",
+        prog="session-search",
         description="Cross-tool session search and retrieval",
     )
     sub = parser.add_subparsers(dest="command", required=True)
@@ -244,7 +317,8 @@ def main():
     p_list.add_argument("--tool", "-t", help="Comma-separated tool names (default: all)")
     p_list.add_argument("--limit", "-n", type=int, default=20)
     p_list.add_argument("--since", help="Only sessions since date (YYYY-MM-DD)")
-    p_list.add_argument("--cwd", help="Filter by working directory prefix")
+    p_list.add_argument("--cwd", help="Filter by working directory prefix (exact match)")
+    p_list.add_argument("--project", "-p", help="Filter by project name/path (fuzzy match)")
     p_list.set_defaults(func=cmd_list)
 
     # search
@@ -252,6 +326,7 @@ def main():
     p_search.add_argument("query", help="Search query")
     p_search.add_argument("--tool", "-t", help="Comma-separated tool names (default: all)")
     p_search.add_argument("--limit", "-n", type=int, default=20)
+    p_search.add_argument("--project", "-p", help="Filter by project name/path (fuzzy match)")
     p_search.set_defaults(func=cmd_search)
 
     # show
@@ -260,6 +335,12 @@ def main():
     p_show.add_argument("--window", "-w", type=int, help="Only show last N messages")
     p_show.add_argument("--max-chars", type=int, default=2000, help="Max chars per message")
     p_show.set_defaults(func=cmd_show)
+
+    # projects
+    p_projects = sub.add_parser("projects", help="List all projects with session counts")
+    p_projects.add_argument("--tool", "-t", help="Comma-separated tool names (default: all)")
+    p_projects.add_argument("--limit", "-n", type=int, default=50, help="Max projects to show")
+    p_projects.set_defaults(func=cmd_projects)
 
     # tools
     p_tools = sub.add_parser("tools", help="List available adapters")
