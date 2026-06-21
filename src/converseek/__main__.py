@@ -192,7 +192,7 @@ def cmd_list(args):
     print("-" * 140)
     for s in all_sessions:
         title = s.title[:40] + "..." if len(s.title) > 40 else s.title
-        sid = s.session_id[:40]
+        sid = s.session_id
         proj = _project_name(s.cwd)[:28] if s.cwd else "-"
         print(f"{s.tool:<14} {sid:<42} {_fmt_time(s.updated_at):<17} {s.message_count:>4}  {proj:<30} {title}")
 
