@@ -25,6 +25,7 @@ class CursorAdapter(BaseAdapter):
     def __init__(self, db_path: Path | None = None):
         self.db_path = db_path or CURSOR_DB
         self._workspace_map = None
+        self._name_map = None
 
     def is_available(self) -> bool:
         return self.db_path.exists()
@@ -36,11 +37,17 @@ class CursorAdapter(BaseAdapter):
 
     def get_workspace_map(self) -> dict[str, str]:
         if self._workspace_map is None:
-            self._workspace_map = self._get_composer_workspace_map()
+            self._load_composer_headers()
         return self._workspace_map
 
-    def _get_composer_workspace_map(self) -> dict[str, str]:
-        composer_to_path = {}
+    def get_name_map(self) -> dict[str, str]:
+        if self._name_map is None:
+            self._load_composer_headers()
+        return self._name_map
+
+    def _load_composer_headers(self) -> None:
+        self._workspace_map = {}
+        self._name_map = {}
         conn = self._connect()
         try:
             row = conn.execute(
@@ -54,13 +61,15 @@ class CursorAdapter(BaseAdapter):
                         if not comp_id:
                             continue
                         
+                        name = comp.get("name")
+                        if name:
+                            self._name_map[comp_id] = name
+                        
                         path_str = None
-                        # Try workspaceIdentifier first
                         ws_ident = comp.get("workspaceIdentifier") or {}
                         uri = ws_ident.get("uri") or {}
                         path_str = uri.get("path") or uri.get("fsPath")
                         
-                        # Fallback to agentLocation environment
                         if not path_str:
                             agent_loc = comp.get("agentLocation") or {}
                             env = agent_loc.get("environment") or {}
@@ -68,14 +77,13 @@ class CursorAdapter(BaseAdapter):
                             path_str = uri.get("path") or uri.get("fsPath")
                         
                         if path_str:
-                            composer_to_path[comp_id] = path_str
+                            self._workspace_map[comp_id] = path_str
                 except Exception:
                     pass
         except Exception:
             pass
         finally:
             conn.close()
-        return composer_to_path
 
     def _extract_composer_info(self, key: str, value: str) -> tuple[SessionMeta, list[dict]] | None:
         """Parse a composerData entry into (meta, bubbles)."""
@@ -88,20 +96,28 @@ class CursorAdapter(BaseAdapter):
             return None
 
         conversation = data.get("fullConversationHeadersOnly") or data.get("conversation") or []
-        # Extract first user message as title
-        title = ""
+        
+        # Preferred title: custom name from headers (what user sees in Cursor UI)
+        title = self.get_name_map().get(composer_id, "")
+        first_user_bubble = ""
+        
+        if not title:
+            for msg in conversation:
+                if msg.get("type") == 1:  # user message
+                    text = msg.get("text", "")
+                    if text:
+                        title = text[:200]
+                        break
+                    # Text not inline — note the bubbleId for later lookup
+                    if not first_user_bubble:
+                        first_user_bubble = msg.get("bubbleId", "")
+        else:
+            for msg in conversation:
+                if msg.get("type") == 1:
+                    first_user_bubble = msg.get("bubbleId", "")
+                    break
         first_ts = 0.0
         last_ts = 0.0
-        first_user_bubble = ""
-        for msg in conversation:
-            if msg.get("type") == 1:  # user message
-                text = msg.get("text", "")
-                if text:
-                    title = text[:200]
-                    break
-                # Text not inline — note the bubbleId for later lookup
-                if not first_user_bubble:
-                    first_user_bubble = msg.get("bubbleId", "")
         # Timestamps from createdAt fields
         for msg in conversation:
             ts_str = msg.get("createdAt", "")
