@@ -305,6 +305,8 @@ class CursorAdapter(BaseAdapter):
                 text = msg.get("text", "")
                 if not text and bubble_id:
                     text = self._read_bubble(bubble_id, composer_id=session_id)
+                if not text.strip():
+                    continue
                 messages.append(Message(
                     msg_id=bubble_id,
                     role=role,
