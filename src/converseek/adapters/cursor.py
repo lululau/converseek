@@ -24,6 +24,7 @@ class CursorAdapter(BaseAdapter):
 
     def __init__(self, db_path: Path | None = None):
         self.db_path = db_path or CURSOR_DB
+        self._workspace_map = None
 
     def is_available(self) -> bool:
         return self.db_path.exists()
@@ -32,6 +33,49 @@ class CursorAdapter(BaseAdapter):
         conn = sqlite3.connect(str(self.db_path))
         conn.row_factory = sqlite3.Row
         return conn
+
+    def get_workspace_map(self) -> dict[str, str]:
+        if self._workspace_map is None:
+            self._workspace_map = self._get_composer_workspace_map()
+        return self._workspace_map
+
+    def _get_composer_workspace_map(self) -> dict[str, str]:
+        composer_to_path = {}
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT value FROM ItemTable WHERE key = 'composer.composerHeaders'"
+            ).fetchone()
+            if row and row["value"]:
+                try:
+                    data = json.loads(row["value"])
+                    for comp in data.get("allComposers", []):
+                        comp_id = comp.get("composerId")
+                        if not comp_id:
+                            continue
+                        
+                        path_str = None
+                        # Try workspaceIdentifier first
+                        ws_ident = comp.get("workspaceIdentifier") or {}
+                        uri = ws_ident.get("uri") or {}
+                        path_str = uri.get("path") or uri.get("fsPath")
+                        
+                        # Fallback to agentLocation environment
+                        if not path_str:
+                            agent_loc = comp.get("agentLocation") or {}
+                            env = agent_loc.get("environment") or {}
+                            uri = env.get("uri") or {}
+                            path_str = uri.get("path") or uri.get("fsPath")
+                        
+                        if path_str:
+                            composer_to_path[comp_id] = path_str
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        finally:
+            conn.close()
+        return composer_to_path
 
     def _extract_composer_info(self, key: str, value: str) -> tuple[SessionMeta, list[dict]] | None:
         """Parse a composerData entry into (meta, bubbles)."""
@@ -82,6 +126,7 @@ class CursorAdapter(BaseAdapter):
             session_id=composer_id,
             title=title,
             source="cursor",
+            cwd=self.get_workspace_map().get(composer_id),
             created_at=first_ts if first_ts else 0.0,
             updated_at=last_ts if last_ts else first_ts if first_ts else 0.0,
             message_count=len(conversation),

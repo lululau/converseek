@@ -120,6 +120,8 @@ class ZCodeAdapter(BaseAdapter):
                     if pd.get("type") == "text":
                         content_parts.append(pd.get("text", ""))
                 content = "\n".join(content_parts) if content_parts else ""
+                if not content.strip():
+                    continue
                 messages.append(Message(
                     msg_id=row["id"],
                     role=role,

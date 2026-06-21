@@ -137,7 +137,12 @@ class OpenCodeAdapter(BaseAdapter):
                     rows = list(reversed(rows))
                 else:
                     rows = conn.execute(sql, (session_id,)).fetchall()
-                return [self._legacy_row_to_msg(r) for r in rows]
+                legacy_messages = []
+                for r in rows:
+                    msg = self._legacy_row_to_msg(r)
+                    if msg.content.strip():
+                        legacy_messages.append(msg)
+                return legacy_messages
 
             # New schema: messages → parts (text content is in parts)
             sql = "SELECT * FROM message WHERE session_id = ? ORDER BY time_created"
@@ -166,6 +171,8 @@ class OpenCodeAdapter(BaseAdapter):
                     if pd.get("type") == "text":
                         content_parts.append(pd.get("text", ""))
                 content = "\n".join(content_parts) if content_parts else ""
+                if not content.strip():
+                    continue
                 messages.append(Message(
                     msg_id=row["id"],
                     role=role,
