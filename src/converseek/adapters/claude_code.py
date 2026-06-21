@@ -118,19 +118,20 @@ class ClaudeCodeAdapter(BaseAdapter):
                         git_branch = obj.get("gitBranch")
                     if obj.get("type") not in ("user", "assistant"):
                         continue
+                    msg = obj.get("message", {}) or {}
+                    text = _content_to_text(msg.get("content", "")).strip()
+                    if not text:
+                        continue
                     message_count += 1
                     ts = _ts(obj.get("timestamp", ""))
                     if ts:
                         if not first_ts:
                             first_ts = ts
                         last_ts = ts
-                    msg = obj.get("message", {}) or {}
                     if model is None and msg.get("model"):
                         model = msg.get("model")
                     if not first_prompt and obj.get("type") == "user":
-                        text = _content_to_text(msg.get("content", "")).strip()
-                        if text:
-                            first_prompt = text
+                        first_prompt = text
         except OSError:
             pass
 
@@ -258,6 +259,8 @@ class ClaudeCodeAdapter(BaseAdapter):
                         elif isinstance(part, str):
                             parts.append(part)
                     content = "\n".join(parts)
+                if not content.strip():
+                    continue
                 messages.append(
                     Message(
                         msg_id=obj.get("uuid", ""),

@@ -64,6 +64,15 @@ class PaseoAdapter(BaseAdapter):
         since: float | None = None,
         cwd: str | None = None,
     ) -> list[SessionMeta]:
+        claude_map = {}
+        try:
+            from .claude_code import ClaudeCodeAdapter
+            claude_adapter = ClaudeCodeAdapter()
+            if claude_adapter.is_available():
+                claude_map = {s.session_id: s.message_count for s in claude_adapter.list_sessions(limit=9999)}
+        except Exception:
+            pass
+
         metas = []
         for _, data in self._iter_session_files():
             meta = self._json_to_meta(data)
@@ -71,6 +80,13 @@ class PaseoAdapter(BaseAdapter):
                 continue
             if cwd and meta.cwd and not meta.cwd.startswith(cwd):
                 continue
+
+            # Enrich message_count
+            persistence = data.get("persistence", {})
+            native_handle = persistence.get("nativeHandle") or persistence.get("sessionId")
+            if native_handle and native_handle in claude_map:
+                meta.message_count = claude_map[native_handle]
+
             metas.append(meta)
         metas.sort(key=lambda m: m.updated_at, reverse=True)
         return metas[:limit]
@@ -78,11 +94,28 @@ class PaseoAdapter(BaseAdapter):
     def search_sessions(self, query: str, *, limit: int = 20) -> list[tuple[SessionMeta, str]]:
         q_lower = query.lower()
         results = []
+
+        claude_map = {}
+        try:
+            from .claude_code import ClaudeCodeAdapter
+            claude_adapter = ClaudeCodeAdapter()
+            if claude_adapter.is_available():
+                claude_map = {s.session_id: s.message_count for s in claude_adapter.list_sessions(limit=9999)}
+        except Exception:
+            pass
+
         for _, data in self._iter_session_files():
             # Search in title and labels
             title = data.get("title", "")
             if q_lower in title.lower():
                 meta = self._json_to_meta(data)
+
+                # Enrich message_count
+                persistence = data.get("persistence", {})
+                native_handle = persistence.get("nativeHandle") or persistence.get("sessionId")
+                if native_handle and native_handle in claude_map:
+                    meta.message_count = claude_map[native_handle]
+
                 results.append((meta, title[:300]))
             if len(results) >= limit:
                 break
@@ -91,10 +124,41 @@ class PaseoAdapter(BaseAdapter):
     def get_session(self, session_id: str) -> SessionMeta | None:
         for _, data in self._iter_session_files():
             if data.get("id") == session_id:
-                return self._json_to_meta(data)
+                meta = self._json_to_meta(data)
+                persistence = data.get("persistence", {})
+                native_handle = persistence.get("nativeHandle") or persistence.get("sessionId")
+                if native_handle:
+                    try:
+                        from .claude_code import ClaudeCodeAdapter
+                        claude_adapter = ClaudeCodeAdapter()
+                        claude_meta = claude_adapter.get_session(native_handle)
+                        if claude_meta:
+                            meta.message_count = claude_meta.message_count
+                    except Exception:
+                        pass
+                return meta
         return None
 
-    def read_messages(self, session_id: str, **kwargs) -> list[Message]:
+    def read_messages(
+        self,
+        session_id: str,
+        *,
+        window: int | None = None,
+        around_msg_id: str | None = None,
+    ) -> list[Message]:
         # Paseo stores metadata only, not full transcripts in the agent JSON.
-        # Full transcripts may be in the persistence.nativeHandle path.
+        # Full transcripts may be in the persistence.nativeHandle path of the underlying Claude session.
+        for _, data in self._iter_session_files():
+            if data.get("id") == session_id:
+                persistence = data.get("persistence", {})
+                native_handle = persistence.get("nativeHandle") or persistence.get("sessionId")
+                if native_handle:
+                    try:
+                        from .claude_code import ClaudeCodeAdapter
+                        claude_adapter = ClaudeCodeAdapter()
+                        return claude_adapter.read_messages(
+                            native_handle, window=window, around_msg_id=around_msg_id
+                        )
+                    except Exception:
+                        pass
         return []
