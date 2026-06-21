@@ -1,6 +1,6 @@
 # converseek
 
-Cross-tool session search and retrieval for 7 AI coding tools.
+Cross-tool session search, browse, and export for 7 AI coding tools.
 
 ## Supported Tools
 
@@ -17,18 +17,19 @@ Cross-tool session search and retrieval for 7 AI coding tools.
 ## Install
 
 ```bash
-uv tool install .
-# or
-uv run converseek tools
+uv tool install converseek
 ```
 
 ## Usage
 
 ```bash
-converseek tools                                    # list adapters
-converseek list --limit 10                         # recent sessions
-converseek list --tool hermes --limit 5            # filter by tool
-converseek search "docker networking"              # full-text search
-converseek search "auth" --tool claude,hermes # search specific tools
-converseek show hermes:20260620_201309_a8e8cb95    # read a session
+uvx converseek tools                                         # list adapters
+uvx converseek list --limit 10                               # recent sessions
+uvx converseek list --tool hermes --limit 5                  # filter by tool
+uvx converseek list --project myapp                          # filter by project
+uvx converseek search "docker networking"                    # full-text search
+uvx converseek search "auth" --tool claude,hermes            # search specific tools
+uvx converseek show hermes:20260620_201309_a8e8cb95          # read a session
+uvx converseek export hermes:20260620_201309_a8e8cb95        # export to markdown
+uvx converseek projects                                      # list all projects
 ```

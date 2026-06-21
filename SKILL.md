@@ -1,6 +1,6 @@
 ---
 name: converseek
-description: "Search and read sessions across 7 AI coding tools: Claude Code, Cursor, Antigravity 2.0, OpenCode, ZCode, Paseo, and Hermes."
+description: "Search, browse, and export sessions across 7 AI coding tools: Claude Code, Cursor, Antigravity 2.0, OpenCode, ZCode, Paseo, and Hermes."
 version: 1.0.0
 author: Hermes Agent
 metadata:
@@ -11,44 +11,55 @@ metadata:
 
 # Session Search
 
-Cross-tool session search and retrieval. Query and read conversations from **7 AI coding tools** through a single CLI.
+Cross-tool session search, browse, and export. Query and read conversations from **7 AI coding tools** through a single CLI.
 
 ## Supported Tools
 
-| Tool | Data Source | Session Count |
-|------|-------------|---------------|
-| **Claude Code** | `~/.claude/projects/` (JSONL + index) | ~394 |
-| **Cursor** | `~/Library/Application Support/Cursor/.../state.vscdb` | ~1,264 |
-| **Antigravity 2.0** | `~/.gemini/antigravity/conversations/*.db` (SQLite + Protobuf) | ~55 |
-| **OpenCode** | `~/.local/share/opencode/opencode.db` | ~858 |
-| **ZCode** | `~/.zcode/cli/db/db.sqlite` | varies |
-| **Paseo** | `~/.paseo/agents/` (JSON files) | varies |
-| **Hermes** | `~/.hermes/state.db` (SQLite + FTS5) | varies |
+| Tool                | Data Source                                                    | Session Count |
+|---------------------|----------------------------------------------------------------|---------------|
+| **Claude Code**     | `~/.claude/projects/` (JSONL + index)                          | ~394          |
+| **Cursor**          | `~/Library/Application Support/Cursor/.../state.vscdb`         | ~1,264        |
+| **Antigravity 2.0** | `~/.gemini/antigravity/conversations/*.db` (SQLite + Protobuf) | ~55           |
+| **OpenCode**        | `~/.local/share/opencode/opencode.db`                          | ~858          |
+| **ZCode**           | `~/.zcode/cli/db/db.sqlite`                                    | varies        |
+| **Paseo**           | `~/.paseo/agents/` (JSON files)                                | varies        |
+| **Hermes**          | `~/.hermes/state.db` (SQLite + FTS5)                           | varies        |
 
 ## Quick Start
 
 ```bash
 # List available tools and their status
-python3 scripts/session_search.py tools
+uvx converseek tools
 
 # List recent sessions across all tools
-python3 scripts/session_search.py list --limit 10
+uvx converseek list --limit 10
 
 # List from a specific tool
-python3 scripts/session_search.py list --tool hermes --limit 5
+uvx converseek list --tool hermes --limit 5
+
+# Filter by project
+uvx converseek list --project myapp
 
 # Search across all tools
-python3 scripts/session_search.py search "docker networking"
+uvx converseek search "docker networking"
 
 # Search specific tools only
-python3 scripts/session_search.py search "auth refactor" --tool claude,hermes
+uvx converseek search "auth refactor" --tool claude,hermes
+
+# Search within a project
+uvx converseek search "auth" --project myapp
 
 # Read a session's messages
-python3 scripts/session_search.py show hermes:20260620_201309_a8e8cb95
-python3 scripts/session_search.py show claude:f2f188c7-... --window 20
-```
+uvx converseek show hermes:20260620_201309_a8e8cb95
+uvx converseek show claude:f2f188c7-... --window 20
 
-The CLI is at `scripts/session_search.py` relative to this skill directory.
+# Export a session to Markdown
+uvx converseek export hermes:20260620_201309_a8e8cb95
+uvx converseek export hermes:20260620_201309_a8e8cb95 -o session.md
+
+# List all projects with session counts
+uvx converseek projects
+```
 
 ## Commands
 
@@ -58,30 +69,47 @@ List all adapters and their availability status.
 ### `list [options]`
 List sessions, most recent first.
 
-| Option | Description |
-|--------|-------------|
-| `--tool TOOL` | Comma-separated tool names (default: all) |
-| `--limit N` | Max sessions to show (default: 20) |
-| `--since DATE` | Only sessions since date (YYYY-MM-DD) |
-| `--cwd PATH` | Filter by working directory prefix |
+| Option           | Description                                 |
+|------------------|---------------------------------------------|
+| `--tool TOOL`    | Comma-separated tool names (default: all)   |
+| `--limit N`      | Max sessions to show (default: 20)          |
+| `--since DATE`   | Only sessions since date (YYYY-MM-DD)       |
+| `--cwd PATH`     | Filter by working directory prefix          |
+| `--project PATH` | Filter by project name/path (fuzzy match)   |
 
 ### `search QUERY [options]`
 Full-text search across sessions. Searches titles and message content.
 
-| Option | Description |
-|--------|-------------|
-| `--tool TOOL` | Comma-separated tool names (default: all) |
-| `--limit N` | Max results (default: 20) |
+| Option           | Description                                 |
+|------------------|---------------------------------------------|
+| `--tool TOOL`    | Comma-separated tool names (default: all)   |
+| `--limit N`      | Max results (default: 20)                   |
+| `--project PATH` | Filter by project name/path (fuzzy match)   |
 
 Per-adapter timeout: 15 seconds. Slow tools (Antigravity) are skipped if they timeout.
 
 ### `show TOOL:SESSION_ID [options]`
 Display messages from a specific session.
 
-| Option | Description |
-|--------|-------------|
-| `--window N` | Only show last N messages |
+| Option          | Description                           |
+|-----------------|---------------------------------------|
+| `--window N`    | Only show last N messages             |
 | `--max-chars N` | Max chars per message (default: 2000) |
+
+### `export TOOL:SESSION_ID [options]`
+Export a session to a Markdown file with metadata and full message history.
+
+| Option       | Description                                                  |
+|--------------|--------------------------------------------------------------|
+| `-o FILE`    | Output file path (default: `./<tool>-<session_id>.md`)       |
+
+### `projects [options]`
+List all unique project directories with session counts.
+
+| Option        | Description                               |
+|---------------|-------------------------------------------|
+| `--tool TOOL` | Comma-separated tool names (default: all) |
+| `--limit N`   | Max projects to show (default: 50)        |
 
 ## Cross-Tool Reference Format
 
@@ -108,7 +136,7 @@ Each tool has a dedicated adapter implementing three operations:
 - `read_messages()` — retrieve full or windowed message history
 
 ```
-session_search/
+converseek/
 ├── base.py                 # Abstract interface + data models
 └── adapters/
     ├── claude_code.py      # JSONL + sessions-index.json
