@@ -12,6 +12,7 @@ For text extraction, we focus on field 19 (user prompts) in step_payload.
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 import subprocess
 import tempfile
@@ -102,35 +103,53 @@ class AntigravityAdapter(BaseAdapter):
         finally:
             conn.close()
 
-    def _extract_text_from_decoded(self, decoded: str) -> str:
+    def _extract_text_from_decoded(self, decoded: str, is_user: bool = True) -> str:
         """Extract human-readable text from decoded protobuf.
 
         In the step_payload protobuf:
-        - Field 19 contains user prompts and AI text responses
-          - Subfield 2: the text content (with octal escapes)
-          - Subfield 3.1: duplicate/alternative text
-        - Tool calls (step_type 8/9) have field 4.2 = tool name, 4.3 = args
-        We only extract field 19 text for readability.
+        - Field 19 contains user prompts (subfield 2 or 3)
+        - Field 20 contains assistant text responses (subfield 1)
         """
         texts = []
-        in_field_19 = False
+        brace_depth = 0
+        in_field = False
+        in_field_depth = 0
+        target_field = "19 {" if is_user else "20 {"
+        target_subfield = ("2: \"", "3: \"") if is_user else ("1: \"",)
+        uuid_pattern = re.compile(
+            r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        )
+
         for line in decoded.split("\n"):
             stripped = line.strip()
-            # Detect field 19 block
-            if stripped.startswith("19 {"):
-                in_field_19 = True
-                continue
-            elif in_field_19 and stripped == "}":
-                in_field_19 = False
-                continue
-            if in_field_19 and (stripped.startswith("2: \"") or stripped.startswith("3: \"")):
-                try:
-                    val = stripped.split('"', 1)[1].rsplit('"', 1)[0]
-                    val = _decode_octal_escapes(val)
-                    if val and len(val) > 3:
-                        texts.append(val)
-                except IndexError:
-                    pass
+            
+            if "{" in stripped:
+                opens = stripped.count("{")
+                for _ in range(opens):
+                    brace_depth += 1
+                    if stripped.startswith(target_field) and not in_field:
+                        in_field = True
+                        in_field_depth = brace_depth
+
+            if in_field and brace_depth == in_field_depth:
+                if any(stripped.startswith(prefix) for prefix in target_subfield):
+                    try:
+                        val = stripped.split('"', 1)[1].rsplit('"', 1)[0]
+                        val = _decode_octal_escapes(val)
+                        if val and len(val) > 3:
+                            if not uuid_pattern.match(val):
+                                texts.append(val)
+                    except IndexError:
+                        pass
+
+            if "}" in stripped:
+                closes = stripped.count("}")
+                for _ in range(closes):
+                    if in_field and brace_depth == in_field_depth:
+                        in_field = False
+                        in_field_depth = 0
+                    brace_depth -= 1
+
         return "\n".join(texts)
 
     def list_sessions(
@@ -244,11 +263,14 @@ class AntigravityAdapter(BaseAdapter):
         steps = self._get_step_payloads(db_path)
         messages = []
         for step in steps:
-            text = self._extract_text_from_decoded(step["decoded"])
+            is_user = step["step_type"] in (7, 14)
+            is_assistant = step["step_type"] == 15
+            if not is_user and not is_assistant:
+                continue
+            text = self._extract_text_from_decoded(step["decoded"], is_user=is_user)
             if not text:
                 continue
-            # step_type 7/14 = user input, others = assistant/system/tool
-            role = "user" if step["step_type"] in (7, 14) else "assistant"
+            role = "user" if is_user else "assistant"
             messages.append(Message(
                 msg_id=str(step["idx"]),
                 role=role,
