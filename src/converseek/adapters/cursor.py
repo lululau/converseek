@@ -222,32 +222,103 @@ class CursorAdapter(BaseAdapter):
         conn = self._connect()
         try:
             q_lower = query.lower()
-            # Use SQL LIKE to pre-filter, much faster than Python scan
-            rows = conn.execute(
-                "SELECT key, value FROM cursorDiskKV "
-                "WHERE key LIKE 'composerData:%' AND key NOT LIKE 'composerData:task-%' "
-                "AND value IS NOT NULL AND length(value) > 100 "
-                "AND lower(value) LIKE ? ORDER BY rowid DESC LIMIT ?",
-                (f"%{q_lower}%", limit * 2),
-            ).fetchall()
+            # SQL query searching in both composerData (excluding tasks) and bubbleId
+            sql = """
+            SELECT key, value FROM cursorDiskKV
+            WHERE (
+                (key LIKE 'composerData:%' AND key NOT LIKE 'composerData:task-%')
+                OR
+                (key LIKE 'bubbleId:%')
+            )
+            AND value IS NOT NULL
+            AND lower(value) LIKE ?
+            ORDER BY rowid DESC
+            LIMIT ?
+            """
+            rows = conn.execute(sql, (f"%{q_lower}%", limit * 5)).fetchall()
+            
+            seen_composers = set()
             results = []
+            
             for row in rows:
-                result = self._extract_composer_info(row["key"], row["value"])
-                if not result:
-                    continue
-                meta, conv = result
-                # Find snippet from first matching message
-                snippet = ""
-                for msg in conv:
-                    text = msg.get("text", "")
-                    if text and q_lower in text.lower():
-                        snippet = text[:300]
-                        break
-                if not snippet:
-                    snippet = meta.title[:300]
-                results.append((meta, snippet))
+                key = row["key"]
+                val = row["value"]
+                
+                if key.startswith("composerData:"):
+                    composer_id = key.replace("composerData:", "")
+                    if composer_id in seen_composers:
+                        continue
+                    seen_composers.add(composer_id)
+                    
+                    result = self._extract_composer_info(key, val)
+                    if not result:
+                        continue
+                    meta, conv = result
+                    
+                    # Fetch title if empty
+                    if not meta.title and meta.extra.get("first_user_bubble"):
+                        bubble = self._read_bubble(meta.extra["first_user_bubble"], composer_id=meta.session_id)
+                        if bubble:
+                            meta.title = bubble[:200]
+                            
+                    snippet = ""
+                    for msg in conv:
+                        text = msg.get("text", "")
+                        if text and q_lower in text.lower():
+                            snippet = text[:300]
+                            break
+                    if not snippet:
+                        snippet = meta.title[:300]
+                        
+                    results.append((meta, snippet))
+                    
+                elif key.startswith("bubbleId:"):
+                    parts = key.split(":")
+                    if len(parts) != 3:
+                        continue
+                    composer_id = parts[1]
+                    if composer_id in seen_composers:
+                        continue
+                    seen_composers.add(composer_id)
+                    
+                    # Load composerData row for this composer_id
+                    comp_row = conn.execute(
+                        "SELECT value FROM cursorDiskKV WHERE key = ?",
+                        (f"composerData:{composer_id}",)
+                    ).fetchone()
+                    if not comp_row:
+                        continue
+                    
+                    result = self._extract_composer_info(f"composerData:{composer_id}", comp_row["value"])
+                    if not result:
+                        continue
+                    meta, _ = result
+                    
+                    # Fetch title if empty
+                    if not meta.title and meta.extra.get("first_user_bubble"):
+                        bubble = self._read_bubble(meta.extra["first_user_bubble"], composer_id=meta.session_id)
+                        if bubble:
+                            meta.title = bubble[:200]
+                            
+                    # Extract snippet from bubble value
+                    try:
+                        data = json.loads(val)
+                    except Exception:
+                        data = {}
+                    text = data.get("text", "")
+                    if not text:
+                        rich = data.get("richText", "")
+                        if rich:
+                            try:
+                                text = _extract_text_from_lexical(json.loads(rich))
+                            except Exception:
+                                pass
+                    snippet = text[:300] if text else meta.title[:300]
+                    results.append((meta, snippet))
+                    
                 if len(results) >= limit:
                     break
+                    
             return results[:limit]
         finally:
             conn.close()
