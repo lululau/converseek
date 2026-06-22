@@ -1,17 +1,17 @@
 ---
 name: converseek
-description: "Search, browse, and export sessions across 7 AI coding tools: Claude Code, Cursor, Antigravity 2.0, OpenCode, ZCode, Paseo, and Hermes."
+description: "Search, browse, and export sessions across 9 AI coding tools: Claude Code, Cursor, Antigravity 2.0, OpenCode, ZCode, Paseo, Hermes, QwenPaw, and Copaw."
 version: 1.0.0
 author: Hermes Agent
 metadata:
   hermes:
-    tags: [session, search, cross-tool, reference, claude, cursor, hermes, opencode]
+    tags: [session, search, cross-tool, reference, claude, cursor, hermes, opencode, qwenpaw, copaw]
     related_skills: [electron-app-investigation]
 ---
 
 # Session Search
 
-Cross-tool session search, browse, and export. Query and read conversations from **7 AI coding tools** through a single CLI.
+Cross-tool session search, browse, and export. Query and read conversations from **9 AI coding tools** through a single CLI.
 
 ## Supported Tools
 
@@ -24,6 +24,8 @@ Cross-tool session search, browse, and export. Query and read conversations from
 | **ZCode**           | `~/.zcode/cli/db/db.sqlite`                                    | varies        |
 | **Paseo**           | `~/.paseo/agents/` (JSON files)                                | varies        |
 | **Hermes**          | `~/.hermes/state.db` (SQLite + FTS5)                           | varies        |
+| **QwenPaw**         | `~/.qwenpaw/workspaces/` (JSON files)                          | varies        |
+| **Copaw**           | `~/.copaw/workspaces/` (JSON files)                            | varies        |
 
 ## Quick Start
 
@@ -127,6 +129,8 @@ Examples:
 - `opencode:ses_1981d72b6ffeN5bTHtWW7EsSZn`
 - `zcode:sess_5b9d6024-78c6-4835-b4e8-6ea182630c9a`
 - `paseo:9f34605d-12fd-4a28-ba02-dc9d6d7049e8`
+- `qwenpaw:925ff85e-0baa-4a8b-8bf5-8c1d6d55ca36`
+- `copaw:925ff85e-0baa-4a8b-8bf5-8c1d6d55ca36`
 
 ## Architecture
 
@@ -137,6 +141,7 @@ Each tool has a dedicated adapter implementing three operations:
 
 ```
 converseek/
+│
 ├── base.py                 # Abstract interface + data models
 └── adapters/
     ├── claude_code.py      # JSONL + sessions-index.json
@@ -145,12 +150,13 @@ converseek/
     ├── zcode.py            # db.sqlite (same message → part schema)
     ├── paseo.py            # JSON files (metadata only, no transcripts)
     ├── cursor.py           # state.vscdb (composerData + bubbleId)
-    └── antigravity.py      # .db + protoc --decode_raw
+    ├── antigravity.py      # .db + protoc --decode_raw
+    └── qwenpaw.py          # JSON files (chats.json and sessions/, handles copaw)
 ```
 
 ## References
 
-- `references/tool-session-formats.md` — Detailed data format reference for all 7 tools' session storage (SQLite schemas, JSONL structures, protobuf field mappings, key formats)
+- `references/tool-session-formats.md` — Detailed data format reference for all tools' session storage (SQLite schemas, JSONL structures, protobuf field mappings, key formats)
 
 ## Pitfalls
 
@@ -159,4 +165,5 @@ converseek/
 - **OpenCode dual schema**: New versions use `~/.local/share/opencode/opencode.db` with `session` + `message` + `part` tables. Legacy uses `~/.opencode/opencode.db` with `sessions` + `messages`. The adapter auto-detects.
 - **ZCode content in parts**: Like OpenCode, ZCode stores message text in the `part` table, not in `message.data`. The `message.data` only has metadata (role, model, timestamps).
 - **Paseo metadata only**: Paseo agent JSON files contain session metadata but not full transcripts. `read_messages()` returns empty for Paseo.
+- **QwenPaw / Copaw session merging**: Session history might be split between the root `sessions/` directory (old format) and channel-specific `sessions/{channel}/` directory (new format). The adapter automatically scans, merges, and deduplicates messages across both locations to construct the full history.
 - **Per-adapter timeout**: List and search operations have a 15-second timeout per adapter to prevent slow tools from blocking the entire query.
