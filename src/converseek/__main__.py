@@ -255,6 +255,8 @@ def cmd_search(args):
         print(f"     ref: {meta.ref}")
         if proj:
             print(f"     project: {proj}")
+        print(f"     created: {_fmt_time(meta.created_at)}")
+        print(f"     updated: {_fmt_time(meta.updated_at)}")
         print(f"     {snippet}")
         print()
     return 0

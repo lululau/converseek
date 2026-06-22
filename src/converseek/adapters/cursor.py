@@ -118,24 +118,35 @@ class CursorAdapter(BaseAdapter):
                     break
         first_ts = 0.0
         last_ts = 0.0
-        # Timestamps from createdAt fields
-        for msg in conversation:
-            ts_str = msg.get("createdAt", "")
-            if ts_str:
-                from datetime import datetime, timezone
-                try:
-                    dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-                    ts = dt.timestamp()
-                except Exception:
-                    ts = 0.0
-            else:
-                ts = msg.get("timestamp", 0)
-                if isinstance(ts, (int, float)):
-                    ts = ts / 1000.0
-            if ts and (first_ts == 0 or ts < first_ts):
-                first_ts = ts
-            if ts and ts > last_ts:
-                last_ts = ts
+
+        c_at_raw = data.get("createdAt")
+        if isinstance(c_at_raw, (int, float)) and c_at_raw > 0:
+            first_ts = c_at_raw / 1000.0
+
+        l_at_raw = data.get("conversationCheckpointLastUpdatedAt") or data.get("lastUpdatedAt")
+        if isinstance(l_at_raw, (int, float)) and l_at_raw > 0:
+            last_ts = l_at_raw / 1000.0
+
+        if not first_ts or not last_ts:
+            # Timestamps from createdAt fields
+            for msg in conversation:
+                ts_str = msg.get("createdAt", "")
+                if ts_str:
+                    from datetime import datetime, timezone
+                    try:
+                        dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                        ts = dt.timestamp()
+                    except Exception:
+                        ts = 0.0
+                else:
+                    ts = msg.get("timestamp", 0)
+                    if isinstance(ts, (int, float)):
+                        ts = ts / 1000.0
+                if ts:
+                    if first_ts == 0 or ts < first_ts:
+                        first_ts = ts
+                    if ts > last_ts:
+                        last_ts = ts
 
         meta = SessionMeta(
             tool=self.tool_name,
