@@ -426,7 +426,32 @@ def main():
         prog="converseek",
         description="Cross-tool conversation search, browse, and export",
     )
-    sub = parser.add_subparsers(dest="command", required=True)
+
+    try:
+        from importlib.metadata import version
+        ver = version("converseek")
+    except Exception:
+        try:
+            import re
+            pyproject_path = Path(__file__).resolve().parents[2] / "pyproject.toml"
+            if pyproject_path.exists():
+                with open(pyproject_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                match = re.search(r'version\s*=\s*"([^"]+)"', content)
+                ver = match.group(1) if match else "0.2.1"
+            else:
+                ver = "0.2.1"
+        except Exception:
+            ver = "0.2.1"
+
+    parser.add_argument(
+        "--version",
+        "-v",
+        action="version",
+        version=f"%(prog)s {ver}",
+    )
+
+    sub = parser.add_subparsers(dest="command")
 
     # list
     p_list = sub.add_parser("list", help="List sessions")
@@ -470,6 +495,9 @@ def main():
 
     try:
         args = parser.parse_args()
+        if not args.command:
+            parser.print_help()
+            return 0
         return args.func(args)
     except BrokenPipeError:
         import os
