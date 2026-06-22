@@ -4,16 +4,16 @@ Cross-tool session search, browse, and export for AI coding tools.
 
 ## Supported Tools
 
-| Tool | Data Source |
-|------|-------------|
-| Claude Code | `~/.claude/projects/` (JSONL + index) |
-| Cursor | `state.vscdb` (composerData + bubbleId) |
+| Tool            | Data Source                                                    |
+|-----------------|----------------------------------------------------------------|
+| Claude Code     | `~/.claude/projects/` (JSONL + index)                          |
+| Cursor          | `state.vscdb` (composerData + bubbleId)                        |
 | Antigravity 2.0 | `~/.gemini/antigravity/conversations/*.db` (SQLite + Protobuf) |
-| OpenCode | `~/.local/share/opencode/opencode.db` |
-| ZCode | `~/.zcode/cli/db/db.sqlite` |
-| Paseo | `~/.paseo/agents/` (JSON) |
-| Hermes | `~/.hermes/state.db` (SQLite + FTS5) |
-| QwenPaw / Copaw | `~/.qwenpaw/workspaces/` / `~/.copaw/workspaces/` (JSON) |
+| OpenCode        | `~/.local/share/opencode/opencode.db`                          |
+| ZCode           | `~/.zcode/cli/db/db.sqlite`                                    |
+| Paseo           | `~/.paseo/agents/` (JSON)                                      |
+| Hermes          | `~/.hermes/state.db` (SQLite + FTS5)                           |
+| QwenPaw / Copaw | `~/.qwenpaw/workspaces/` / `~/.copaw/workspaces/` (JSON)       |
 
 ## Install
 
