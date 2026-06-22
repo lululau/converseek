@@ -15,6 +15,9 @@ Cross-tool session search, browse, and export for AI coding tools.
 | Hermes          | `~/.hermes/state.db` (SQLite + FTS5)                           |
 | QwenPaw / Copaw | `~/.qwenpaw/workspaces/` / `~/.copaw/workspaces/` (JSON)       |
 
+> [!NOTE]
+> For **QwenPaw / Copaw**, if your workspaces are in a custom path, you can specify it using the `QWENPAW_WORKSPACE_DIR` (or `COPAW_WORKSPACE_DIR`) environment variable.
+
 ## Install
 
 ```bash

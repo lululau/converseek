@@ -27,6 +27,9 @@ Cross-tool session search, browse, and export. Query and read conversations from
 | **QwenPaw**         | `~/.qwenpaw/workspaces/` (JSON files)                          | varies        |
 | **Copaw**           | `~/.copaw/workspaces/` (JSON files)                            | varies        |
 
+> [!NOTE]
+> For **QwenPaw / Copaw**, if your workspaces are in a custom path, you can specify it using the `QWENPAW_WORKSPACE_DIR` (or `COPAW_WORKSPACE_DIR`) environment variable.
+
 ## Quick Start
 
 ```bash
