@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """converseek — cross-tool conversation search, browse, and export.
 
-Search and read sessions from 7 AI coding tools:
-  claude, hermes, opencode, paseo, zcode, cursor, antigravity
+Search and read sessions from 9 AI coding tools:
+  claude, hermes, opencode, paseo, zcode, cursor, antigravity, qwenpaw, copaw
 
 Usage:
     converseek list [--tool TOOL] [--limit N] [--since DATE] [--project PATH]
@@ -35,6 +35,7 @@ from .adapters.paseo import PaseoAdapter
 from .adapters.zcode import ZCodeAdapter
 from .adapters.cursor import CursorAdapter
 from .adapters.antigravity import AntigravityAdapter
+from .adapters.qwenpaw import QwenPawAdapter, CopawAdapter
 
 
 ADAPTERS = {
@@ -45,6 +46,8 @@ ADAPTERS = {
     "zcode": ZCodeAdapter,
     "cursor": CursorAdapter,
     "antigravity": AntigravityAdapter,
+    "qwenpaw": QwenPawAdapter,
+    "copaw": CopawAdapter,
 }
 
 
