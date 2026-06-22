@@ -468,8 +468,14 @@ def main():
     p_tools = sub.add_parser("tools", help="List available adapters")
     p_tools.set_defaults(func=cmd_tools)
 
-    args = parser.parse_args()
-    return args.func(args)
+    try:
+        args = parser.parse_args()
+        return args.func(args)
+    except BrokenPipeError:
+        import os
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        sys.exit(141)
 
 
 if __name__ == "__main__":
