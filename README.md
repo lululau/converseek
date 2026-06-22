@@ -49,3 +49,22 @@ uvx bump-my-version bump patch   # e.g., 0.2.0 -> 0.2.1
 uvx bump-my-version bump minor   # e.g., 0.2.0 -> 0.3.0
 uvx bump-my-version bump major   # e.g., 0.2.0 -> 1.0.0
 ```
+
+### Build and Publish to PyPI
+
+You can easily build the package and publish it to PyPI using `uv`:
+
+1. Build the distribution packages (wheel and sdist):
+   ```bash
+   uv build
+   ```
+   This will generate build artifacts in the `dist/` directory.
+
+2. Publish the package to PyPI:
+   ```bash
+   uv publish
+   ```
+   This command will upload the files from `dist/` to PyPI. It will prompt for your PyPI API token. Alternatively, you can specify the token from an environment variable:
+   ```bash
+   uv publish --token <your-pypi-token>
+   ```
