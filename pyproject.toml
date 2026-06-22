@@ -1,6 +1,6 @@
 [project]
 name = "converseek"
-version = "0.2.0"
+version = "0.2.1"
 description = "Cross-tool session search, browse, and export for AI coding tools (Claude Code, Cursor, Antigravity, OpenCode, ZCode, Paseo, Hermes)"
 requires-python = ">=3.11"
 dependencies = []
@@ -14,3 +14,13 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/converseek"]
+
+[tool.bumpversion]
+current_version = "0.2.1"
+parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
+serialize = ["{major}.{minor}.{patch}"]
+search = "version = \"{current_version}\""
+replace = "version = \"{new_version}\""
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
