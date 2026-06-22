@@ -175,7 +175,7 @@ class QwenPawAdapter(BaseAdapter):
     def is_available(self) -> bool:
         return len(self._get_workspaces()) > 0
 
-    def _get_save_path(self, workspace_path: Path, chat: dict) -> Path:
+    def _get_session_files(self, workspace_path: Path, chat: dict) -> list[Path]:
         session_id = chat.get("session_id", "")
         user_id = chat.get("user_id", "")
         channel = chat.get("channel", "")
@@ -187,12 +187,53 @@ class QwenPawAdapter(BaseAdapter):
             
         filename = f"{safe_uid}_{safe_sid}.json" if safe_uid else f"{safe_sid}.json"
         
+        paths = []
+        # Check root sessions directory (old location)
+        root_target = workspace_path / "sessions" / filename
+        if root_target.exists():
+            paths.append(root_target)
+            
+        # Check channel-specific directory (new location)
         if channel:
             safe_channel = sanitize_filename(channel)
             target = workspace_path / "sessions" / safe_channel / filename
-            if target.exists():
-                return target
+            if target.exists() and target != root_target:
+                paths.append(target)
                 
+        return paths
+
+    def _read_messages_from_files(self, files: list[Path]) -> list[Message]:
+        all_messages = []
+        seen_ids = set()
+        for session_file in files:
+            try:
+                with open(session_file, "r", encoding="utf-8", errors="surrogatepass") as sf:
+                    session_data = json.load(sf)
+                memory_content = session_data.get("agent", {}).get("memory", {}).get("content", [])
+                messages = _parse_messages(memory_content)
+                for msg in messages:
+                    if msg.msg_id:
+                        if msg.msg_id in seen_ids:
+                            continue
+                        seen_ids.add(msg.msg_id)
+                    all_messages.append(msg)
+            except Exception:
+                continue
+                
+        all_messages.sort(key=lambda m: m.timestamp)
+        return all_messages
+
+    def _get_save_path(self, workspace_path: Path, chat: dict) -> Path:
+        files = self._get_session_files(workspace_path, chat)
+        if files:
+            return files[-1]
+        session_id = chat.get("session_id", "")
+        user_id = chat.get("user_id", "")
+        safe_sid = sanitize_filename(session_id)
+        safe_uid = sanitize_filename(user_id) if user_id else ""
+        if safe_uid and safe_uid == safe_sid:
+            safe_uid = ""
+        filename = f"{safe_uid}_{safe_sid}.json" if safe_uid else f"{safe_sid}.json"
         return workspace_path / "sessions" / filename
 
     def _find_chat_and_workspace(self, chat_id: str) -> tuple[Path, dict] | tuple[None, None]:
@@ -232,18 +273,15 @@ class QwenPawAdapter(BaseAdapter):
                     if since and updated_at < since:
                         continue
                         
-                    session_file = self._get_save_path(ws, chat)
-                    if not session_file.exists():
+                    session_files = self._get_session_files(ws, chat)
+                    if not session_files:
                         continue
                         
                     detected_cwd = None
                     message_count = 0
                     model = None
                     try:
-                        with open(session_file, "r", encoding="utf-8", errors="surrogatepass") as sf:
-                            session_data = json.load(sf)
-                        memory_content = session_data.get("agent", {}).get("memory", {}).get("content", [])
-                        messages = _parse_messages(memory_content)
+                        messages = self._read_messages_from_files(session_files)
                         message_count = len(messages)
                         
                         for msg in messages:
@@ -251,7 +289,15 @@ class QwenPawAdapter(BaseAdapter):
                             if detected_cwd:
                                 break
                                 
-                        model = session_data.get("agent", {}).get("config", {}).get("model")
+                        for sf in reversed(session_files):
+                            try:
+                                with open(sf, "r", encoding="utf-8", errors="surrogatepass") as f:
+                                    session_data = json.load(f)
+                                model = session_data.get("agent", {}).get("config", {}).get("model")
+                                if model:
+                                    break
+                            except Exception:
+                                pass
                     except Exception:
                         pass
                         
@@ -291,18 +337,15 @@ class QwenPawAdapter(BaseAdapter):
                 with open(chats_file, "r", encoding="utf-8") as f:
                     chats_data = json.load(f)
                 for chat in chats_data.get("chats", []):
-                    session_file = self._get_save_path(ws, chat)
-                    if not session_file.exists():
+                    session_files = self._get_session_files(ws, chat)
+                    if not session_files:
                         continue
                         
                     title = chat.get("name", "")
                     title_match = q_lower in title.lower()
                     
                     try:
-                        with open(session_file, "r", encoding="utf-8", errors="surrogatepass") as sf:
-                            session_data = json.load(sf)
-                        memory_content = session_data.get("agent", {}).get("memory", {}).get("content", [])
-                        messages = _parse_messages(memory_content)
+                        messages = self._read_messages_from_files(session_files)
                         message_count = len(messages)
                     except Exception:
                         continue
@@ -327,11 +370,16 @@ class QwenPawAdapter(BaseAdapter):
                         updated_at = _parse_iso(chat.get("updated_at"))
                         
                         model = None
-                        try:
-                            model = session_data.get("agent", {}).get("config", {}).get("model")
-                        except Exception:
-                            pass
-                            
+                        for sf in reversed(session_files):
+                            try:
+                                with open(sf, "r", encoding="utf-8", errors="surrogatepass") as f:
+                                    session_data = json.load(f)
+                                model = session_data.get("agent", {}).get("config", {}).get("model")
+                                if model:
+                                    break
+                            except Exception:
+                                pass
+                                
                         meta = SessionMeta(
                             tool=self.tool_name,
                             session_id=chat.get("id"),
@@ -361,18 +409,15 @@ class QwenPawAdapter(BaseAdapter):
         if not ws or not chat:
             return None
             
-        session_file = self._get_save_path(ws, chat)
-        if not session_file.exists():
+        session_files = self._get_session_files(ws, chat)
+        if not session_files:
             return None
             
         detected_cwd = None
         message_count = 0
         model = None
         try:
-            with open(session_file, "r", encoding="utf-8", errors="surrogatepass") as sf:
-                session_data = json.load(sf)
-            memory_content = session_data.get("agent", {}).get("memory", {}).get("content", [])
-            messages = _parse_messages(memory_content)
+            messages = self._read_messages_from_files(session_files)
             message_count = len(messages)
             
             for msg in messages:
@@ -380,7 +425,15 @@ class QwenPawAdapter(BaseAdapter):
                 if detected_cwd:
                     break
                     
-            model = session_data.get("agent", {}).get("config", {}).get("model")
+            for sf in reversed(session_files):
+                try:
+                    with open(sf, "r", encoding="utf-8", errors="surrogatepass") as f:
+                        session_data = json.load(f)
+                    model = session_data.get("agent", {}).get("config", {}).get("model")
+                    if model:
+                        break
+                except Exception:
+                    pass
         except Exception:
             pass
             
@@ -410,15 +463,12 @@ class QwenPawAdapter(BaseAdapter):
         if not ws or not chat:
             return []
             
-        session_file = self._get_save_path(ws, chat)
-        if not session_file.exists():
+        session_files = self._get_session_files(ws, chat)
+        if not session_files:
             return []
             
         try:
-            with open(session_file, "r", encoding="utf-8", errors="surrogatepass") as sf:
-                session_data = json.load(sf)
-            memory_content = session_data.get("agent", {}).get("memory", {}).get("content", [])
-            messages = _parse_messages(memory_content)
+            messages = self._read_messages_from_files(session_files)
         except Exception:
             return []
             
