@@ -495,6 +495,3 @@ class QwenPawAdapter(BaseAdapter):
             
         return messages
 
-
-class CopawAdapter(QwenPawAdapter):
-    tool_name = "copaw"

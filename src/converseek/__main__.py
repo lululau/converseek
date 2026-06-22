@@ -35,7 +35,7 @@ from .adapters.paseo import PaseoAdapter
 from .adapters.zcode import ZCodeAdapter
 from .adapters.cursor import CursorAdapter
 from .adapters.antigravity import AntigravityAdapter
-from .adapters.qwenpaw import QwenPawAdapter, CopawAdapter
+from .adapters.qwenpaw import QwenPawAdapter
 
 
 ADAPTERS = {
@@ -47,14 +47,27 @@ ADAPTERS = {
     "cursor": CursorAdapter,
     "antigravity": AntigravityAdapter,
     "qwenpaw": QwenPawAdapter,
-    "copaw": CopawAdapter,
 }
+
+ALIASES = {
+    "copaw": "qwenpaw",
+}
+
+
+def resolve_tool_name(name: str) -> str:
+    """Resolve an alias to the main tool name."""
+    return ALIASES.get(name, name)
+
 
 
 def get_adapters(tools: str | None = None) -> list:
     """Get adapter instances for specified tools (or all available)."""
     if tools:
-        names = [t.strip() for t in tools.split(",")]
+        names = []
+        for t in tools.split(","):
+            resolved = resolve_tool_name(t.strip())
+            if resolved not in names:
+                names.append(resolved)
     else:
         names = list(ADAPTERS.keys())
     instances = []
@@ -254,6 +267,7 @@ def cmd_show(args):
         print(f"Error: invalid reference '{args.ref}'. Use TOOL:SESSION_ID", file=sys.stderr)
         return 1
     tool_name, session_id = parts
+    tool_name = resolve_tool_name(tool_name)
 
     cls = ADAPTERS.get(tool_name)
     if not cls:
@@ -309,6 +323,7 @@ def cmd_export(args):
         print(f"Error: invalid reference '{args.ref}'. Use TOOL:SESSION_ID", file=sys.stderr)
         return 1
     tool_name, session_id = parts
+    tool_name = resolve_tool_name(tool_name)
 
     cls = ADAPTERS.get(tool_name)
     if not cls:
