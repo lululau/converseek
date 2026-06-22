@@ -1,6 +1,6 @@
 # converseek
 
-Cross-tool session search, browse, and export for 7 AI coding tools.
+Cross-tool session search, browse, and export for AI coding tools.
 
 ## Supported Tools
 
@@ -13,6 +13,7 @@ Cross-tool session search, browse, and export for 7 AI coding tools.
 | ZCode | `~/.zcode/cli/db/db.sqlite` |
 | Paseo | `~/.paseo/agents/` (JSON) |
 | Hermes | `~/.hermes/state.db` (SQLite + FTS5) |
+| QwenPaw / Copaw | `~/.qwenpaw/workspaces/` / `~/.copaw/workspaces/` (JSON) |
 
 ## Install
 
@@ -32,4 +33,16 @@ uvx converseek search "auth" --tool claude,hermes            # search specific t
 uvx converseek show hermes:20260620_201309_a8e8cb95          # read a session
 uvx converseek export hermes:20260620_201309_a8e8cb95        # export to markdown
 uvx converseek projects                                      # list all projects
+```
+
+## Development
+
+### Bump Version
+
+This project uses `bump-my-version` to manage versioning. You can bump the version number using `uvx`:
+
+```bash
+uvx bump-my-version bump patch   # e.g., 0.2.0 -> 0.2.1
+uvx bump-my-version bump minor   # e.g., 0.2.0 -> 0.3.0
+uvx bump-my-version bump major   # e.g., 0.2.0 -> 1.0.0
 ```
