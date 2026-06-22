@@ -126,10 +126,22 @@ def _parse_messages(memory_content: list) -> list[Message]:
 class QwenPawAdapter(BaseAdapter):
     tool_name = "qwenpaw"
 
-    def __init__(self):
-        pass
+    def __init__(self, base_dir: Path | None = None):
+        self._custom_base_dir = Path(base_dir).expanduser().resolve() if base_dir else None
+
+    @property
+    def base_dir(self) -> Path:
+        if self._custom_base_dir:
+            return self._custom_base_dir
+        wss = self._get_workspaces()
+        if wss:
+            return wss[0]
+        return Path(f"~/.{self.tool_name}").expanduser().resolve()
 
     def _get_workspaces(self) -> list[Path]:
+        if self._custom_base_dir:
+            return [self._custom_base_dir]
+
         workspaces = []
         # Check both qwenpaw and copaw env variables and directories cross-compatibly
         tools_to_check = [self.tool_name]
